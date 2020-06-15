@@ -46,6 +46,7 @@ def main():
     obs = env.reset()
     epsilon = 1.0
     replay_memory = deque(maxlen=1000)
+    gamma = 0.9
 
     # pre-process observation
     obs = prepro(obs)
@@ -94,6 +95,7 @@ def main():
 
     # policy to use
     q_value = L5[0]
+    q_value_batch = L5
 
     # loss to minimize
     #loss = (tf.math.maximum(q_value) - target[0]) ** 2
@@ -128,7 +130,7 @@ def main():
             obs = prepro(obs)
             obs = np.reshape(obs, [1, 6400])
 
-            transition = [bef_obs, action, reward, obs, done]
+            transition = [bef_obs[0], action, reward, obs[0], done]
             replay_memory.append(transition)
 
             print(action, reward, done)
@@ -139,12 +141,26 @@ def main():
 
                 bef_state   = [data[0] for data in train_data]
                 action      = [data[1] for data in train_data]
-                reward      = [data[2] for data in train_data]
+                reward      = np.array([data[2] for data in train_data])
                 aft_state   = [data[3] for data in train_data]
                 done        = [data[4] for data in train_data]
-                
-                print(train_data)
-                #sess.run([q_value], feed_dict={X:})
+
+                print(bef_state)
+
+                aft_state = np.stack(aft_state)
+
+                # find aft_state's q-value
+                q_val = sess.run([q_value_batch], feed_dict={X: aft_state})
+
+                # find maximum q-value
+                q_val = np.max(q_val, -1)[0]
+
+                # set batch target value : r + gamma * max(q-value)
+                batch_target = reward + gamma * q_val
+
+                print(q_val)
+                print(reward)
+                print(batch_target)
 
                 #loss, _ = sess.run([loss, optimizer], feed_dict={X: obs, target: })
                 break
