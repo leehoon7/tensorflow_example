@@ -4,11 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import random
+from collections import deque
 
 
+# pre-process 210 x 160 x 3 frame into 6400 (80x80) 1D float vector
 def prepro(I, render = False):
-
-    # pre-process 210 x 160 x 3 frame into 6400 (80x80) 1D float vector
 
     I = I[35:195]  # crop
     I = I[::2, ::2, 0]  # down-sample by factor of 2
@@ -45,6 +45,7 @@ def main():
 
     obs = env.reset()
     epsilon = 1.0
+    replay_memory = deque(maxlen=1000)
 
     # pre-process observation
     obs = prepro(obs)
@@ -53,6 +54,7 @@ def main():
     # set placeholder
     X = tf.placeholder(tf.float32, [None, 6400])
     X_img = tf.reshape(X, [-1, 80, 80, 1])
+    target = tf.placeholder(tf.float32, [None, 1])
 
     # 1st layer : 4 filters, 8 * 8 kernel, 1 input channel
     W1 = tf.Variable(tf.random_normal([8, 8, 1, 4], stddev=0.1))
@@ -94,6 +96,7 @@ def main():
     q_value = L5[0]
 
     # loss to minimize
+    #loss = (tf.math.maximum(q_value) - target[0]) ** 2
     loss = L5[0][0] - 1
     optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
 
@@ -102,42 +105,53 @@ def main():
     sess.run(tf.global_variables_initializer())
 
     while True:
-        # render game screen
-        env.render()
 
-        action = None
+        done = False
 
-        # 'random action' or get 'q-value from network'
-        if random.random() < epsilon:
-            action = random.randint(0, 5)
-        else:
-            policy = sess.run([q_value], feed_dict={X: obs})
-            action = np.argmax(np.array(policy))
+        while not done:
+            # render game screen
+            env.render()
+            action = None
 
+            # 'random action' or get 'q-value from network'
+            if random.random() < epsilon:
+                action = random.randint(0, 5)
+            else:
+                policy = sess.run([q_value], feed_dict={X: obs})
+                action = np.argmax(np.array(policy))
 
+            # save a state before do action
+            bef_obs = obs
 
-        # do action and get new information
-        obs, reward, done, info = env.step(action)
+            # do action and get new state, reward and done
+            obs, reward, done, _ = env.step(action)
+            obs = prepro(obs)
+            obs = np.reshape(obs, [1, 6400])
 
-        print(action, reward, done, info)
+            transition = [bef_obs, action, reward, obs, done]
+            replay_memory.append(transition)
 
-        obs = prepro(obs)
-        obs = np.reshape(obs, [1, 6400])
-        time.sleep(0.1)
+            print(action, reward, done)
+            #print(bef_obs, action, reward, obs, done)
 
-        '''
+            if len(replay_memory) >= 10:
+                train_data = random.sample(replay_memory, 10)
 
-        policy, loss, _ = sess.run([dqn_policy, loss, optimizer], feed_dict={X: obs})
+                bef_state   = [data[0] for data in train_data]
+                action      = [data[1] for data in train_data]
+                reward      = [data[2] for data in train_data]
+                aft_state   = [data[3] for data in train_data]
+                done        = [data[4] for data in train_data]
+                
+                print(train_data)
+                #sess.run([q_value], feed_dict={X:})
 
+                #loss, _ = sess.run([loss, optimizer], feed_dict={X: obs, target: })
+                break
 
-        obs, rew, done, info = env.step(5)
+            time.sleep(0.05)
 
-        obs = prepro(obs)
-        obs = np.reshape(obs, [1, 6400])
-        time.sleep(0.1)
-
-        print(policy, loss)
-        '''
+        break
 
     env.close()
 
