@@ -46,6 +46,7 @@ def main():
     obs = env.reset()
     epsilon = 1.0
     replay_memory = deque(maxlen=1000)
+    batch_size = 10
     gamma = 0.9
 
     # pre-process observation
@@ -56,6 +57,7 @@ def main():
     X = tf.placeholder(tf.float32, [None, 6400])
     X_img = tf.reshape(X, [-1, 80, 80, 1])
     target = tf.placeholder(tf.float32, [None, 1])
+    act_index = tf.placeholder(tf.int32, [None, 2])
 
     # 1st layer : 4 filters, 8 * 8 kernel, 1 input channel
     W1 = tf.Variable(tf.random_normal([8, 8, 1, 4], stddev=0.1))
@@ -97,9 +99,11 @@ def main():
     q_value = L5[0]
     q_value_batch = L5
 
+    q_value_current = tf.expand_dims(tf.gather_nd(L5, act_index), -1)
+
     # loss to minimize
-    #loss = (tf.math.maximum(q_value) - target[0]) ** 2
-    loss = L5[0][0] - 1
+    loss = tf.reduce_mean((target - q_value_current) ** 2)
+    #loss = L5[0][0] - 1
     optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
 
     # make a session
@@ -133,21 +137,20 @@ def main():
             transition = [bef_obs[0], action, reward, obs[0], done]
             replay_memory.append(transition)
 
-            print(action, reward, done)
+            #print(action, reward, done)
             #print(bef_obs, action, reward, obs, done)
 
             if len(replay_memory) >= 10:
-                train_data = random.sample(replay_memory, 10)
+                train_data = random.sample(replay_memory, batch_size)
 
                 bef_state   = [data[0] for data in train_data]
-                action      = [data[1] for data in train_data]
+                action      = np.array([data[1] for data in train_data])
                 reward      = np.array([data[2] for data in train_data])
                 aft_state   = [data[3] for data in train_data]
                 done        = [data[4] for data in train_data]
 
-                print(bef_state)
-
                 aft_state = np.stack(aft_state)
+                bef_state = np.stack(bef_state)
 
                 # find aft_state's q-value
                 q_val = sess.run([q_value_batch], feed_dict={X: aft_state})
@@ -157,19 +160,33 @@ def main():
 
                 # set batch target value : r + gamma * max(q-value)
                 batch_target = reward + gamma * q_val
+                batch_target = batch_target.reshape(-1, 1)
 
-                print(q_val)
-                print(reward)
-                print(batch_target)
+                #print(q_val)
+                #print(reward)
+                #print(batch_target)
+                #print(action)
 
-                #loss, _ = sess.run([loss, optimizer], feed_dict={X: obs, target: })
-                break
+                index = []
+                for idx, action_idx in enumerate(action):
+                    index.append([idx, action_idx])
+                #print(index)
 
-            time.sleep(0.05)
+                #a, b = sess.run([q_value_batch, q_value_current], feed_dict={X: bef_state, target: batch_target, act_index: index})
+                #print(a)
+                #print(b)
+                loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
+                print(loss_val)
+                #break
 
-        break
+            time.sleep(0.01)
 
+        #break
     env.close()
+    obs = env.reset()
+    obs = prepro(obs)
+    obs = np.reshape(obs, [1, 6400])
+
 
 
 if __name__ == '__main__':
