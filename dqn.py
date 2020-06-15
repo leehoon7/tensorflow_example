@@ -44,10 +44,11 @@ def main():
     env = gym.make("Pong-v0")
 
     obs = env.reset()
-    epsilon = 1.0
+    epsilon = 0.95
     replay_memory = deque(maxlen=1000)
-    batch_size = 10
-    gamma = 0.9
+    batch_size = 40
+    gamma = 0.99
+    episode = 1
 
     # pre-process observation
     obs = prepro(obs)
@@ -60,21 +61,27 @@ def main():
     act_index = tf.placeholder(tf.int32, [None, 2])
 
     # 1st layer : 4 filters, 8 * 8 kernel, 1 input channel
-    W1 = tf.Variable(tf.random_normal([8, 8, 1, 4], stddev=0.1))
+    W1 = tf.Variable(tf.random_normal([4, 4, 1, 4], stddev=0.1))
     b1 = tf.Variable(tf.zeros([4]))
     L1 = tf.nn.conv2d(X_img, W1, strides=[1, 1, 1, 1], padding='SAME')
     L1 = tf.nn.relu(L1 + b1)
-    L1 = tf.nn.max_pool(L1, ksize=[1, 4, 4, 1], strides=[1, 4, 4, 1], padding='SAME')
+    L1 = tf.nn.max_pool(L1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+    W11 = tf.Variable(tf.random_normal([4, 4, 4, 8], stddev=0.1))
+    b11 = tf.Variable(tf.zeros([8]))
+    L11 = tf.nn.conv2d(L1, W11, strides=[1, 1, 1, 1], padding='SAME')
+    L11 = tf.nn.relu(L11 + b11)
+    L11 = tf.nn.max_pool(L11, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
     # 2nd layer : 8 filters, 4 * 4 kernel, 4 input channels
-    W2 = tf.Variable(tf.random_normal([4, 4, 4, 8], stddev=0.1))
-    b2 = tf.Variable(tf.zeros([8]))
-    L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
+    W2 = tf.Variable(tf.random_normal([4, 4, 8, 16], stddev=0.1))
+    b2 = tf.Variable(tf.zeros([16]))
+    L2 = tf.nn.conv2d(L11, W2, strides=[1, 1, 1, 1], padding='SAME')
     L2 = tf.nn.relu(L2 + b2)
     L2 = tf.nn.max_pool(L2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
     # 3rd layer : 16 filters, 2 * 2 kernel, 8 input channels
-    W3 = tf.Variable(tf.random_normal([2, 2, 8, 16], stddev=0.1))
+    W3 = tf.Variable(tf.random_normal([2, 2, 16, 16], stddev=0.1))
     b3 = tf.Variable(tf.zeros([16]))
     L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
     L3 = tf.nn.relu(L3 + b3)
@@ -104,19 +111,21 @@ def main():
     # loss to minimize
     loss = tf.reduce_mean((target - q_value_current) ** 2)
     #loss = L5[0][0] - 1
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss)
 
     # make a session
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 
-    while True:
+    loss_epi = []
+    for i in range(100):
 
         done = False
-
+        loss_list = []
         while not done:
             # render game screen
-            env.render()
+            if epsilon > 4.3:
+                env.render()
             action = None
 
             # 'random action' or get 'q-value from network'
@@ -140,14 +149,14 @@ def main():
             #print(action, reward, done)
             #print(bef_obs, action, reward, obs, done)
 
-            if len(replay_memory) >= 10:
+            if len(replay_memory) >= 100:
                 train_data = random.sample(replay_memory, batch_size)
 
                 bef_state   = [data[0] for data in train_data]
                 action      = np.array([data[1] for data in train_data])
                 reward      = np.array([data[2] for data in train_data])
                 aft_state   = [data[3] for data in train_data]
-                done        = [data[4] for data in train_data]
+                terminal    = [data[4] for data in train_data]
 
                 aft_state = np.stack(aft_state)
                 bef_state = np.stack(bef_state)
@@ -176,16 +185,22 @@ def main():
                 #print(a)
                 #print(b)
                 loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
-                print(loss_val)
-                #break
+                loss_list.append(loss_val)
 
-            time.sleep(0.01)
 
-        #break
-    env.close()
-    obs = env.reset()
-    obs = prepro(obs)
-    obs = np.reshape(obs, [1, 6400])
+        print('episode : ', episode)
+        print('loss : ', sum(loss_list)/len(loss_list))
+        loss_epi.append(sum(loss_list)/len(loss_list))
+        episode += 1
+            #break
+        env.close()
+        obs = env.reset()
+        obs = prepro(obs)
+        obs = np.reshape(obs, [1, 6400])
+
+        if epsilon != 0:
+            epsilon -= 0.05
+    print(loss_epi)
 
 
 
