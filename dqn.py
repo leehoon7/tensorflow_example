@@ -44,8 +44,10 @@ def main():
     env = gym.make("Pong-v0")
 
     obs = env.reset()
-    epsilon = 0.95
-    replay_memory = deque(maxlen=1000)
+    epsilon = 1.0
+    epsilon_min = 0.01
+    decay_rate = 0.005
+    replay_memory = deque(maxlen=50000)
     batch_size = 40
     gamma = 0.99
     episode = 1
@@ -111,7 +113,7 @@ def main():
     # loss to minimize
     loss = tf.reduce_mean((target - q_value_current) ** 2)
     #loss = L5[0][0] - 1
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.00025).minimize(loss)
 
     # make a session
     sess = tf.Session()
@@ -119,7 +121,7 @@ def main():
 
     loss_epi = []
     reward_epi = []
-    for i in range(200):
+    for i in range(2000):
 
         done = False
         loss_list = []
@@ -154,9 +156,6 @@ def main():
             transition = [bef_obs[0], action, reward, obs[0], real_done]
             replay_memory.append(transition)
 
-            #print(action, reward, done)
-            #print(bef_obs, action, reward, obs, done)
-
             if len(replay_memory) >= 100:
                 train_data = random.sample(replay_memory, batch_size)
 
@@ -177,53 +176,40 @@ def main():
 
                 terminal = (terminal == False).astype(int)
 
-                #print(q_val)
-                #print(terminal)
-
-
                 # set batch target value : r + gamma * max(q-value)
                 batch_target = reward + gamma * q_val * terminal
-                #print(reward)
-                #print(q_val)
-                #print(batch_target)
                 batch_target = batch_target.reshape(-1, 1)
 
-                #print(q_val)
-                #print(reward)
-                #print(batch_target)
-                #print(action)
-                #print(terminal)
 
                 index = []
                 for idx, action_idx in enumerate(action):
                     index.append([idx, action_idx])
-                #print(index)
 
-                #a, b = sess.run([q_value_batch, q_value_current], feed_dict={X: bef_state, target: batch_target, act_index: index})
-                #print(a)
-                #print(b)
                 loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
                 loss_list.append(loss_val)
 
+
+        print('***********************')
         print('episode : ', episode)
         print('loss : ', sum(loss_list)/len(loss_list))
         loss_epi.append(sum(loss_list)/len(loss_list))
         reward_epi.append(sum(reward_list))
         print('reward : ', reward_epi[-1])
+        print('epsilon : ', epsilon)
         episode += 1
-            #break
+
         env.close()
         obs = env.reset()
         obs = prepro(obs)
         obs = np.reshape(obs, [1, 6400])
 
-        if epsilon != 0:
-            epsilon -= 0.025
+        if epsilon > epsilon_min:
+            epsilon -= decay_rate
+
     print(loss_epi)
     print(reward_epi)
 
 
 
 if __name__ == '__main__':
-    #check_img_diff()
     main()
