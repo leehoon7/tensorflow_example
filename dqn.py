@@ -118,13 +118,15 @@ def main():
     sess.run(tf.global_variables_initializer())
 
     loss_epi = []
-    for i in range(100):
+    reward_epi = []
+    for i in range(200):
 
         done = False
         loss_list = []
+        reward_list = []
         while not done:
             # render game screen
-            if epsilon > 4.3:
+            if episode >= 180:
                 env.render()
             action = None
 
@@ -140,10 +142,16 @@ def main():
 
             # do action and get new state, reward and done
             obs, reward, done, _ = env.step(action)
+
+            real_done = done
+            if reward == -1.0:
+                real_done = True
+
+            reward_list.append(reward)
             obs = prepro(obs)
             obs = np.reshape(obs, [1, 6400])
 
-            transition = [bef_obs[0], action, reward, obs[0], done]
+            transition = [bef_obs[0], action, reward, obs[0], real_done]
             replay_memory.append(transition)
 
             #print(action, reward, done)
@@ -156,7 +164,7 @@ def main():
                 action      = np.array([data[1] for data in train_data])
                 reward      = np.array([data[2] for data in train_data])
                 aft_state   = [data[3] for data in train_data]
-                terminal    = [data[4] for data in train_data]
+                terminal    = np.array([data[4] for data in train_data])
 
                 aft_state = np.stack(aft_state)
                 bef_state = np.stack(bef_state)
@@ -167,14 +175,24 @@ def main():
                 # find maximum q-value
                 q_val = np.max(q_val, -1)[0]
 
+                terminal = (terminal == False).astype(int)
+
+                #print(q_val)
+                #print(terminal)
+
+
                 # set batch target value : r + gamma * max(q-value)
-                batch_target = reward + gamma * q_val
+                batch_target = reward + gamma * q_val * terminal
+                #print(reward)
+                #print(q_val)
+                #print(batch_target)
                 batch_target = batch_target.reshape(-1, 1)
 
                 #print(q_val)
                 #print(reward)
                 #print(batch_target)
                 #print(action)
+                #print(terminal)
 
                 index = []
                 for idx, action_idx in enumerate(action):
@@ -187,10 +205,11 @@ def main():
                 loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
                 loss_list.append(loss_val)
 
-
         print('episode : ', episode)
         print('loss : ', sum(loss_list)/len(loss_list))
         loss_epi.append(sum(loss_list)/len(loss_list))
+        reward_epi.append(sum(reward_list))
+        print('reward : ', reward_epi[-1])
         episode += 1
             #break
         env.close()
@@ -199,8 +218,9 @@ def main():
         obs = np.reshape(obs, [1, 6400])
 
         if epsilon != 0:
-            epsilon -= 0.05
+            epsilon -= 0.025
     print(loss_epi)
+    print(reward_epi)
 
 
 
