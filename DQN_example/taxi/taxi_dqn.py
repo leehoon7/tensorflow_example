@@ -21,7 +21,7 @@ def main():
 
     epsilon = 1.0
     epsilon_min = 0.1
-    decay_rate = 0.0025
+    decay_rate = 0.001
     replay_memory = deque(maxlen=500)
     batch_size = 50
     gamma = 0.999
@@ -72,7 +72,7 @@ def main():
 
     action_set = np.array(action_set)
 
-    for i in range(1000):
+    for i in range(2000):
 
         done = False
         loss_list = []
