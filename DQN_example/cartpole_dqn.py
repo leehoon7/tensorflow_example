@@ -1,43 +1,9 @@
 import gym
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 import random
 from collections import deque
-
-
-# pre-process 210 x 160 x 3 frame into 6400 (80x80) 1D float vector
-def prepro(I, render = False):
-
-    I = I[35:195]  # crop
-    I = I[::2, ::2, 0]  # down-sample by factor of 2
-    I[I == 144] = 0  # erase background (background type 1)
-    I[I == 109] = 0  # erase background (background type 2)
-    I[I != 0] = 1  # everything else (paddles, ball) just set to 1
-
-    if render:
-        return I
-
-    return I.astype(np.float).ravel()
-
-
-def check_img_diff():
-    env = gym.make("Pong-v0")
-    obs = env.reset()
-
-    for i in range(50):
-        env.render()
-        obs, rew, done, info = env.step(5)
-        time.sleep(0.1)
-
-    plt.imshow(obs)
-    plt.show()
-    plt.close('all')
-
-    plt.imshow(prepro(obs, True))
-    plt.show()
-    plt.close('all')
 
 
 def main():
@@ -53,8 +19,6 @@ def main():
     batch_size = 5
     gamma = 0.99
     episode = 1
-
-    print(obs)
 
     X = tf.placeholder(tf.float32, [None, 4])
     target = tf.placeholder(tf.float32, [None, 1])
@@ -108,11 +72,7 @@ def main():
             reward_list.append(reward)
 
             transition = [bef_obs[0], action, reward, obs[0], done]
-
-            #print(transition)
             replay_memory.append(transition)
-
-            obs = obs.reshape(-1, 4)
 
             if len(replay_memory) >= 5:
                 train_data = random.sample(replay_memory, batch_size)
@@ -122,8 +82,6 @@ def main():
                 reward      = np.array([data[2] for data in train_data])
                 aft_state   = [data[3] for data in train_data]
                 terminal    = np.array([data[4] for data in train_data])
-
-                #print(bef_state)
 
                 aft_state = np.stack(aft_state)
                 bef_state = np.stack(bef_state)
@@ -147,15 +105,16 @@ def main():
                 loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
                 loss_list.append(loss_val)
 
+        loss_epi.append(sum(loss_list) / len(loss_list))
+        reward_epi.append(sum(reward_list))
 
         print('***********************')
         print('episode : ', episode)
-        print('loss : ', sum(loss_list)/len(loss_list))
-        loss_epi.append(sum(loss_list)/len(loss_list))
-        reward_epi.append(sum(reward_list))
+        print('loss : ', loss_epi[-1])
         print('reward : ', reward_epi[-1])
         print('epsilon : ', epsilon)
         print('time : ', time.time() - current_time)
+
         episode += 1
 
         env.close()
