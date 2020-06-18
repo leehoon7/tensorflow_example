@@ -8,8 +8,15 @@ from collections import deque
 
 def decode(i):
 
-    out = [0] * 500
-    out[i] = 1
+    out = []
+    out.append(i % 4)
+    i = i // 4
+    out.append(i % 5)
+    i = i // 5
+    out.append(i % 5)
+    i = i // 5
+    out.append(i)
+
     return np.array(out)
 
 
@@ -20,39 +27,36 @@ def main():
     obs = decode(obs)
 
     epsilon = 1.0
-    epsilon_min = 0.1
-    decay_rate = 0.0025
+    epsilon_min = 0.01
+    decay_rate = 0.005
     replay_memory = deque(maxlen=500)
     batch_size = 50
-    gamma = 0.999
+    gamma = 0.99
     episode = 1
 
-    S = tf.placeholder(tf.float32, [None, 500])
-    A = tf.placeholder(tf.float32, [None, 6])
+    S = tf.placeholder(tf.float32, [None, 4])
+    A = tf.placeholder(tf.float32, [None, 1])
 
     target = tf.placeholder(tf.float32, [None, 1])
 
     # state layer
-    W1 = tf.Variable(tf.random_normal([500, 30], stddev=0.1))
-    b1 = tf.Variable(tf.zeros([30]))
+    W1 = tf.Variable(tf.random_normal([4, 32], stddev=0.1))
+    b1 = tf.Variable(tf.zeros([32]))
     L1 = tf.nn.relu(tf.matmul(S, W1) + b1)
 
+    # action layer
+    W2 = tf.Variable(tf.random_normal([1, 8], stddev=0.1))
+    b2 = tf.Variable(tf.zeros([8]))
+    L2 = tf.nn.relu(tf.matmul(A, W2) + b2)
+
     # q-value layer
-    SA = tf.concat([L1, A], 1)
-    W3 = tf.Variable(tf.random_normal([30 + 6, 50], stddev=0.1))
-    b3 = tf.Variable(tf.zeros([50]))
+    SA = tf.concat([L1, L2], 1)
+    W3 = tf.Variable(tf.random_normal([32 + 8, 16], stddev=0.1))
+    b3 = tf.Variable(tf.zeros([16]))
     L3 = tf.nn.relu(tf.matmul(SA, W3) + b3)
 
-    W4 = tf.Variable(tf.random_normal([50, 30], stddev=0.1))
-    b4 = tf.Variable(tf.zeros([30]))
-    L4 = tf.nn.relu(tf.matmul(L3, W4) + b4)
-
-    W5 = tf.Variable(tf.random_normal([30, 10], stddev=0.1))
-    b5 = tf.Variable(tf.zeros([10]))
-    L5 = tf.nn.relu(tf.matmul(L4, W5) + b5)
-
-    W6 = tf.Variable(tf.random_normal([10, 1], stddev=0.1))
-    q_value = tf.matmul(L5, W6)
+    W4 = tf.Variable(tf.random_normal([16, 1], stddev=0.1))
+    q_value = tf.matmul(L3, W4)
 
     loss = tf.reduce_mean((target - q_value) ** 2)
     optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
@@ -64,20 +68,14 @@ def main():
     reward_epi = []
     current_time = time.time()
 
-    action_set = []
-    for i in range(6):
-        temp = [0] * 6
-        temp[i] = 1
-        action_set.append(temp)
-
-    action_set = np.array(action_set)
+    action_set = np.array([0, 1, 2, 3, 4, 5])
+    action_set = action_set.reshape(-1, 1)
 
     for i in range(1000):
 
         done = False
         loss_list = []
         reward_list = []
-        reward_to_print = None
 
         while not done:
             # render game screen
@@ -100,7 +98,7 @@ def main():
             obs, reward, done, _ = env.step(action)
 
             if done:
-                reward_to_print = reward
+                print(reward)
 
             obs = decode(obs)
             reward_list.append(reward)
@@ -108,7 +106,7 @@ def main():
             transition = [bef_obs, action, reward, obs, done]
             replay_memory.append(transition)
 
-            if len(replay_memory) >= batch_size:
+            if len(replay_memory) >= 500:
                 train_data = random.sample(replay_memory, batch_size)
 
                 bef_state   = [data[0] for data in train_data]
@@ -128,7 +126,6 @@ def main():
 
                 aft_state_feed = np.stack(aft_state_feed)
                 action_feed = np.array(action_set.tolist() * batch_size)
-
                 q_val = sess.run(q_value, feed_dict={S: aft_state_feed, A: action_feed})
                 q_val = q_val.reshape(-1, 6)
 
@@ -148,9 +145,7 @@ def main():
 
                 index = []
                 for act in action:
-                    temp = [0] * 6
-                    temp[act] = 1
-                    index.append(temp)
+                    index.append([act])
                 #print(action)
                 #print(index)
                 #print(bef_state)
@@ -160,7 +155,8 @@ def main():
 
                 #print(loss_list)
 
-        if len(replay_memory) >= batch_size:
+
+        if len(replay_memory) >= 500:
 
             loss_epi.append(sum(loss_list) / len(loss_list))
             reward_epi.append(sum(reward_list))
@@ -171,7 +167,6 @@ def main():
             print('reward : ', reward_epi[-1])
             print('epsilon : ', epsilon)
             print('time : ', time.time() - current_time)
-            print('final reward : ', reward_to_print)
 
         episode += 1
 
