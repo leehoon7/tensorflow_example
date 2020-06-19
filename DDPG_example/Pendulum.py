@@ -3,7 +3,11 @@ import tensorflow as tf
 import random
 import numpy as np
 from collections import deque
+import time
 
+
+def make_critic_network(input, weight):
+    pass
 
 def main():
 
@@ -16,13 +20,17 @@ def main():
     action_bound = env.action_space.high
 
     noise_epsilon = 1
-    replay_memory = deque(maxlen=50)
-    batch_size = 5
-    gamma = 0.99
-    episode = 1000
+    noise_epsilon_min = 0.0
+    noise_epsilon_decay = 0.01
 
-    actor_learning_rate = 0.001
-    critic_learning_rate = 0.001
+    replay_memory = deque(maxlen=500)
+    batch_size = 50
+    gamma = 0.99
+    episode = 100
+    cur_episode = 1
+
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.0001
 
     print(state_dim, action_dim, action_bound)
 
@@ -59,6 +67,11 @@ def main():
     critic_val = sess.run(critic_output, feed_dict={S: obs, A: action})
     #print(action, critic_val)
 
+    A_loss_epi = []
+    C_loss_epi = []
+    reward_epi = []
+    current_time = time.time()
+
     for i in range(episode):
 
         done = False
@@ -73,7 +86,7 @@ def main():
             action = action[0] + noise_epsilon * np.random.normal(0, 1, 1)
             action = np.clip(action, -action_bound, action_bound)
 
-            print(action)
+            #print(action)
 
             # save a state before do action
             bef_obs = obs
@@ -107,21 +120,30 @@ def main():
 
 
 
-                break
+
+            #env.render()
 
 
+        C_loss_epi.append(sum(C_loss_list) / len(C_loss_list))
+
+        print('***********************')
+        print('episode : ', cur_episode)
+        print('critic loss : ', C_loss_epi[-1])
+
+        print('epsilon : ', noise_epsilon)
+        print('time : ', time.time() - current_time)
 
 
+        cur_episode += 1
 
-
-
-            env.render()
-
-            #break
 
         env.close()
         obs = env.reset()
         obs = obs.reshape(-1, 3)
+
+        if noise_epsilon > noise_epsilon_min:
+            noise_epsilon -= noise_epsilon_decay
+
         break
 
 
