@@ -16,14 +16,20 @@ def main():
     action_bound = env.action_space.high
 
     noise_epsilon = 1
-    replay_memory = deque(maxlen=500)
+    replay_memory = deque(maxlen=50)
+    batch_size = 5
+    gamma = 0.99
+    episode = 1000
 
-    act_learning_rate = 0.001
+    actor_learning_rate = 0.001
+    critic_learning_rate = 0.001
+
     print(state_dim, action_dim, action_bound)
 
     ''' make placeholders '''
     S = tf.placeholder(tf.float32, [None, state_dim])
     A = tf.placeholder(tf.float32, [None, action_dim])
+    T = tf.placeholder(tf.float32, [None, 1])
 
     ''' actor network '''
     A_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
@@ -41,6 +47,9 @@ def main():
     C_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
     critic_output = tf.matmul(C_L1, C_W2)
 
+    C_loss = tf.reduce_mean((T - critic_output) ** 2)
+    C_optimizer = tf.train.AdamOptimizer(learning_rate=critic_learning_rate).minimize(C_loss)
+
     ''' make a session'''
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
@@ -50,17 +59,21 @@ def main():
     critic_val = sess.run(critic_output, feed_dict={S: obs, A: action})
     #print(action, critic_val)
 
-    for i in range(1000):
+    for i in range(episode):
 
         done = False
-        loss_list = []
+        A_loss_list = []
+        C_loss_list = []
         reward_list = []
 
         while not done:
 
             # action with gaussian noise for exploration
             action = sess.run(actor_output, feed_dict={S: obs})
-            action = action[0] + noise_epsilon * np.random.normal(0, 0.5, 1)
+            action = action[0] + noise_epsilon * np.random.normal(0, 1, 1)
+            action = np.clip(action, -action_bound, action_bound)
+
+            print(action)
 
             # save a state before do action
             bef_obs = obs
@@ -70,6 +83,35 @@ def main():
 
             reward_list.append(reward)
             transition = [bef_obs[0], action, reward, obs[0], done]
+            replay_memory.append(transition)
+
+            if len(replay_memory) >= batch_size:
+                train_data = random.sample(replay_memory, batch_size)
+
+                t_bef_state = np.stack([data[0] for data in train_data])
+                t_action = np.array([data[1] for data in train_data])
+                t_reward = np.array([data[2] for data in train_data])
+                t_aft_state = np.stack([data[3] for data in train_data])
+                t_terminal = np.array([data[4] for data in train_data])
+
+                q_val = sess.run(critic_output, feed_dict={S: t_aft_state, A: t_action})
+                q_val = q_val.squeeze()
+
+                t_terminal = (t_terminal == False).astype(int)
+
+                batch_target = t_reward + gamma * q_val * t_terminal
+                batch_target = batch_target.reshape(-1, 1)
+
+                C_loss_val, _ = sess.run([C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
+                C_loss_list.append(C_loss_val)
+
+
+
+                break
+
+
+
+
 
 
 
