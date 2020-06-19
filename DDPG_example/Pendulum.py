@@ -2,6 +2,7 @@ import gym
 import tensorflow as tf
 import random
 import numpy as np
+from collections import deque
 
 
 def main():
@@ -13,6 +14,9 @@ def main():
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     action_bound = env.action_space.high
+
+    noise_epsilon = 1
+    replay_memory = deque(maxlen=500)
 
     act_learning_rate = 0.001
     print(state_dim, action_dim, action_bound)
@@ -44,7 +48,39 @@ def main():
     ''' check actor & critic'''
     action = sess.run(actor_output, feed_dict={S: obs})
     critic_val = sess.run(critic_output, feed_dict={S: obs, A: action})
-    print(action, critic_val)
+    #print(action, critic_val)
+
+    for i in range(1000):
+
+        done = False
+        loss_list = []
+        reward_list = []
+
+        while not done:
+
+            # action with gaussian noise for exploration
+            action = sess.run(actor_output, feed_dict={S: obs})
+            action = action[0] + noise_epsilon * np.random.normal(0, 0.5, 1)
+
+            # save a state before do action
+            bef_obs = obs
+
+            obs, reward, done, _ = env.step(action)
+            obs = obs.reshape(-1, 3)
+
+            reward_list.append(reward)
+            transition = [bef_obs[0], action, reward, obs[0], done]
+
+
+
+            env.render()
+
+            #break
+
+        env.close()
+        obs = env.reset()
+        obs = obs.reshape(-1, 3)
+        break
 
 
 if __name__ == '__main__':
