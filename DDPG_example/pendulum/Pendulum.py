@@ -23,14 +23,14 @@ def main():
     replay_memory = deque(maxlen=5000)
     batch_size = 500
     gamma = 0.99
-    episode = 1100
+    episode = 500
     cur_episode = 1
     tau_ = 0.995
 
     actor_learning_rate = 0.001
     critic_learning_rate = 0.001
 
-    print(state_dim, action_dim, action_bound)
+    #print(state_dim, action_dim, action_bound)
 
     ''' make placeholders '''
     S = tf.placeholder(tf.float32, [None, state_dim])
@@ -107,8 +107,8 @@ def main():
     target_action = sess.run(target_actor_output, feed_dict={S: obs})
     target_critic_val = sess.run(target_critic_output, feed_dict={S: obs, A: action})
 
-    print(action, critic_val)
-    print(target_action, target_critic_val)
+    #print(action, critic_val)
+    #print(target_action, target_critic_val)
 
     A_loss_epi = []
     C_loss_epi = []
@@ -128,11 +128,6 @@ def main():
             action = sess.run(actor_output, feed_dict={S: obs})
             action = action[0] + noise_epsilon * np.random.normal(0, 0.5, 1)
             action = np.clip(action, -action_bound, action_bound)
-
-            if cur_episode > 200:
-                print(action)
-
-            #print(action)
 
             # save a state before do action
             bef_obs = obs
@@ -162,7 +157,7 @@ def main():
                 batch_target = t_reward + gamma * q_val * t_terminal
                 batch_target = batch_target.reshape(-1, 1)
 
-                criiii, C_loss_val, _ = sess.run([critic_output, C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
+                C_loss_val, _ = sess.run([C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
                 C_loss_list.append(C_loss_val)
 
                 A_loss_val, _ = sess.run([A_loss, A_optimizer], feed_dict={S: t_bef_state})
@@ -170,8 +165,6 @@ def main():
 
                 sess.run([t_up1, t_up2, t_up3, t_up4, t_up5, t_up6])
 
-
-            #env.render()
             if cur_episode > 1000:
                 env.render()
 
@@ -198,7 +191,9 @@ def main():
         if noise_epsilon > noise_epsilon_min:
             noise_epsilon -= noise_epsilon_decay
 
-        #break
+    print(A_loss_epi)
+    print(C_loss_epi)
+    print(reward_epi)
 
 
 if __name__ == '__main__':
