@@ -6,11 +6,6 @@ from collections import deque
 import time
 
 
-def target_network_update(sess, target, original):
-    sess.run()
-    pass
-
-
 def main():
 
     env = gym.make("Pendulum-v0")
@@ -28,7 +23,7 @@ def main():
     replay_memory = deque(maxlen=5000)
     batch_size = 500
     gamma = 0.99
-    episode = 1000
+    episode = 1100
     cur_episode = 1
     tau_ = 0.995
 
@@ -73,7 +68,7 @@ def main():
 
     A_loss1 = tf.nn.relu(tf.matmul(tf.concat([S, actor_output], 1), C_W1) + C_b1)
     A_loss = - tf.reduce_mean(tf.matmul(A_loss1, C_W2))
-    A_optimizer = tf.train.AdamOptimizer(learning_rate=actor_learning_rate).minimize(A_loss)
+    A_optimizer = tf.train.AdamOptimizer(learning_rate=actor_learning_rate).minimize(A_loss, var_list=[A_W1, A_b1, A_W2])
 
     ''' actor target network '''
 
@@ -131,8 +126,11 @@ def main():
 
             # action with gaussian noise for exploration
             action = sess.run(actor_output, feed_dict={S: obs})
-            action = action[0] + noise_epsilon * np.random.normal(0, 1.5, 1)
+            action = action[0] + noise_epsilon * np.random.normal(0, 0.5, 1)
             action = np.clip(action, -action_bound, action_bound)
+
+            if cur_episode > 200:
+                print(action)
 
             #print(action)
 
@@ -164,7 +162,7 @@ def main():
                 batch_target = t_reward + gamma * q_val * t_terminal
                 batch_target = batch_target.reshape(-1, 1)
 
-                C_loss_val, _ = sess.run([C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
+                criiii, C_loss_val, _ = sess.run([critic_output, C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
                 C_loss_list.append(C_loss_val)
 
                 A_loss_val, _ = sess.run([A_loss, A_optimizer], feed_dict={S: t_bef_state})
@@ -174,7 +172,7 @@ def main():
 
 
             #env.render()
-            if cur_episode > 200:
+            if cur_episode > 1000:
                 env.render()
 
         if len(replay_memory) > batch_size:
@@ -188,7 +186,6 @@ def main():
             print('critic loss : ', C_loss_epi[-1])
             print('actor loss : ', A_loss_epi[-1])
             print('reward : ', reward_epi[-1])
-
             print('epsilon : ', noise_epsilon)
             print('time : ', time.time() - current_time)
 
