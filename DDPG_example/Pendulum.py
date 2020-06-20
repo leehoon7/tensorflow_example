@@ -22,18 +22,18 @@ def main():
     action_bound = env.action_space.high
 
     noise_epsilon = 1
-    noise_epsilon_min = 0.0
-    noise_epsilon_decay = 0.01
+    noise_epsilon_min = 0.01
+    noise_epsilon_decay = 0.005
 
-    replay_memory = deque(maxlen=50)
-    batch_size = 5
+    replay_memory = deque(maxlen=5000)
+    batch_size = 500
     gamma = 0.99
     episode = 1000
     cur_episode = 1
-    tau_ = 1.0
+    tau_ = 0.995
 
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.0001
+    actor_learning_rate = 0.001
+    critic_learning_rate = 0.001
 
     print(state_dim, action_dim, action_bound)
 
@@ -41,24 +41,8 @@ def main():
     S = tf.placeholder(tf.float32, [None, state_dim])
     A = tf.placeholder(tf.float32, [None, action_dim])
     T = tf.placeholder(tf.float32, [None, 1])
-    tau = tf.constant([0.99])
+    tau = tf.constant([0.995])
 
-    ''' actor network '''
-    A_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
-    A_b1 = tf.Variable(tf.zeros([64]))
-    A_L1 = tf.nn.relu(tf.matmul(S, A_W1) + A_b1)
-
-    A_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
-    actor_output = tf.nn.tanh(tf.matmul(A_L1, A_W2)) * action_bound
-
-    ''' actor target network '''
-
-    AT_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
-    AT_b1 = tf.Variable(tf.zeros([64]))
-    AT_L1 = tf.nn.relu(tf.matmul(S, AT_W1) + AT_b1)
-
-    AT_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
-    target_actor_output = tf.nn.tanh(tf.matmul(AT_L1, AT_W2)) * action_bound
 
     ''' critic network '''
     C_W1 = tf.Variable(tf.random_normal([state_dim + action_dim, 64], stddev=0.1))
@@ -79,14 +63,32 @@ def main():
     CT_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
     target_critic_output = tf.matmul(CT_L1, CT_W2)
 
-    CT_loss = tf.reduce_mean((T - target_critic_output) ** 2)
-    CT_optimizer = tf.train.AdamOptimizer(learning_rate=critic_learning_rate).minimize(CT_loss)
+    ''' actor network '''
+    A_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
+    A_b1 = tf.Variable(tf.zeros([64]))
+    A_L1 = tf.nn.relu(tf.matmul(S, A_W1) + A_b1)
+
+    A_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
+    actor_output = tf.nn.tanh(tf.matmul(A_L1, A_W2)) * action_bound
+
+    A_loss1 = tf.nn.relu(tf.matmul(tf.concat([S, actor_output], 1), C_W1) + C_b1)
+    A_loss = - tf.reduce_mean(tf.matmul(A_loss1, C_W2))
+    A_optimizer = tf.train.AdamOptimizer(learning_rate=actor_learning_rate).minimize(A_loss)
+
+    ''' actor target network '''
+
+    AT_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
+    AT_b1 = tf.Variable(tf.zeros([64]))
+    AT_L1 = tf.nn.relu(tf.matmul(S, AT_W1) + AT_b1)
+
+    AT_W2 = tf.Variable(tf.random_normal([64, 1], stddev=0.1))
+    target_actor_output = tf.nn.tanh(tf.matmul(AT_L1, AT_W2)) * action_bound
 
     ''' make a session'''
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 
-    ''' update_session '''
+    ''' update session '''
     up1 = AT_W1.assign(A_W1)
     up2 = AT_b1.assign(A_b1)
     up3 = AT_W2.assign(A_W2)
@@ -95,6 +97,14 @@ def main():
     up6 = CT_W2.assign(C_W2)
 
     sess.run([up1, up2, up3, up4, up5, up6])
+
+    ''' tau update session '''
+    t_up1 = AT_W1.assign(tau * AT_W1 + (1 - tau) * A_W1)
+    t_up2 = AT_b1.assign(tau * AT_b1 + (1 - tau) * A_b1)
+    t_up3 = AT_W2.assign(tau * AT_W2 + (1 - tau) * A_W2)
+    t_up4 = CT_W1.assign(tau * CT_W1 + (1 - tau) * C_W1)
+    t_up5 = CT_b1.assign(tau * CT_b1 + (1 - tau) * C_b1)
+    t_up6 = CT_W2.assign(tau * CT_W2 + (1 - tau) * C_W2)
 
     ''' check actor & critic'''
     action = sess.run(actor_output, feed_dict={S: obs})
@@ -121,7 +131,7 @@ def main():
 
             # action with gaussian noise for exploration
             action = sess.run(actor_output, feed_dict={S: obs})
-            action = action[0] + noise_epsilon * np.random.normal(0, 1, 1)
+            action = action[0] + noise_epsilon * np.random.normal(0, 1.5, 1)
             action = np.clip(action, -action_bound, action_bound)
 
             #print(action)
@@ -157,19 +167,30 @@ def main():
                 C_loss_val, _ = sess.run([C_loss, C_optimizer], feed_dict={S: t_bef_state, A: t_action, T: batch_target})
                 C_loss_list.append(C_loss_val)
 
+                A_loss_val, _ = sess.run([A_loss, A_optimizer], feed_dict={S: t_bef_state})
+                A_loss_list.append(A_loss_val)
 
+                sess.run([t_up1, t_up2, t_up3, t_up4, t_up5, t_up6])
 
 
             #env.render()
+            if cur_episode > 200:
+                env.render()
 
-        C_loss_epi.append(sum(C_loss_list) / len(C_loss_list))
+        if len(replay_memory) > batch_size:
 
-        print('***********************')
-        print('episode : ', cur_episode)
-        print('critic loss : ', C_loss_epi[-1])
+            C_loss_epi.append(sum(C_loss_list) / len(C_loss_list))
+            A_loss_epi.append(sum(A_loss_list) / len(A_loss_list))
+            reward_epi.append(sum(reward_list))
 
-        print('epsilon : ', noise_epsilon)
-        print('time : ', time.time() - current_time)
+            print('***********************')
+            print('episode : ', cur_episode)
+            print('critic loss : ', C_loss_epi[-1])
+            print('actor loss : ', A_loss_epi[-1])
+            print('reward : ', reward_epi[-1])
+
+            print('epsilon : ', noise_epsilon)
+            print('time : ', time.time() - current_time)
 
         cur_episode += 1
 
