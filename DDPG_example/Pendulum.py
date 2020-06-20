@@ -25,8 +25,8 @@ def main():
     noise_epsilon_min = 0.0
     noise_epsilon_decay = 0.01
 
-    replay_memory = deque(maxlen=500)
-    batch_size = 50
+    replay_memory = deque(maxlen=50)
+    batch_size = 5
     gamma = 0.99
     episode = 1000
     cur_episode = 1
@@ -41,7 +41,7 @@ def main():
     S = tf.placeholder(tf.float32, [None, state_dim])
     A = tf.placeholder(tf.float32, [None, action_dim])
     T = tf.placeholder(tf.float32, [None, 1])
-    tau = tf.constant([1.0])
+    tau = tf.constant([0.99])
 
     ''' actor network '''
     A_W1 = tf.Variable(tf.random_normal([state_dim, 64], stddev=0.1))
@@ -145,7 +145,8 @@ def main():
                 t_aft_state = np.stack([data[3] for data in train_data])
                 t_terminal = np.array([data[4] for data in train_data])
 
-                q_val = sess.run(critic_output, feed_dict={S: t_aft_state, A: t_action})
+                action_next = sess.run(target_actor_output, feed_dict={S: t_aft_state})
+                q_val = sess.run(target_critic_output, feed_dict={S: t_aft_state, A: action_next})
                 q_val = q_val.squeeze()
 
                 t_terminal = (t_terminal == False).astype(int)
@@ -161,7 +162,6 @@ def main():
 
             #env.render()
 
-
         C_loss_epi.append(sum(C_loss_list) / len(C_loss_list))
 
         print('***********************')
@@ -171,9 +171,7 @@ def main():
         print('epsilon : ', noise_epsilon)
         print('time : ', time.time() - current_time)
 
-
         cur_episode += 1
-
 
         env.close()
         obs = env.reset()
