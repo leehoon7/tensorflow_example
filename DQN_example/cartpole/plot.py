@@ -6,7 +6,7 @@ data = [-1016.8514166561022, -1542.1508669387115, -1531.168347338826, -1774.6235
 
 plt.plot(data)
 plt.title('reward')
-plt.savefig('reward.png')
+plt.savefig('reward1.png')
 
 window = 25
 rolling_mean = pd.Series(data).rolling(window).mean()
