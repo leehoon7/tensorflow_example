@@ -4,37 +4,46 @@ import numpy as np
 import time
 import random
 from collections import deque
+import matplotlib.pyplot as plt
 
 
 def main():
-    env = gym.make("CartPole-v0")
+    env = gym.make("LunarLander-v2")
+    #env = gym.make("CartPole-v0")
+
+    state_dim = 8
+    action_dim = 4
 
     obs = env.reset()
-    obs = obs.reshape(-1, 4)
+    obs = obs.reshape(-1, state_dim)
 
     epsilon = 1.0
-    epsilon_min = 0.01
-    decay_rate = 0.005
-    replay_memory = deque(maxlen=500)
-    batch_size = 5
+    epsilon_min = 0.005
+    decay_rate = 0.001
+    replay_memory = deque(maxlen=100000)
+    batch_size = 1024
     gamma = 0.99
     episode = 1
 
-    X = tf.placeholder(tf.float32, [None, 4])
+    X = tf.placeholder(tf.float32, [None, state_dim])
     target = tf.placeholder(tf.float32, [None, 1])
     act_index = tf.placeholder(tf.int32, [None, 2])
 
-    W1 = tf.Variable(tf.random_normal([4, 64], stddev=0.1))
-    b1 = tf.Variable(tf.zeros([64]))
+    W1 = tf.Variable(tf.random_normal([state_dim, 256], stddev=0.1))
+    b1 = tf.Variable(tf.zeros([256]))
     L1 = tf.nn.relu(tf.matmul(X, W1) + b1)
 
-    W2 = tf.Variable(tf.random_normal([64, 2], stddev=0.1))
-    L2 = tf.matmul(L1, W2)
+    W2 = tf.Variable(tf.random_normal([256, 256], stddev=0.1))
+    b2 = tf.Variable(tf.zeros([256]))
+    L2 = tf.nn.relu(tf.matmul(L1, W2) + b2)
 
-    q_value_current = tf.expand_dims(tf.gather_nd(L2, act_index), -1)
+    W3 = tf.Variable(tf.random_normal([256, action_dim], stddev=0.1))
+    L3 = tf.matmul(L2, W3)
+
+    q_value_current = tf.expand_dims(tf.gather_nd(L3, act_index), -1)
 
     loss = tf.reduce_mean((target - q_value_current) ** 2)
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(loss)
 
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
@@ -43,7 +52,7 @@ def main():
     reward_epi = []
     current_time = time.time()
 
-    for i in range(1000):
+    for i in range(5000):
 
         done = False
         loss_list = []
@@ -51,15 +60,15 @@ def main():
 
         while not done:
             # render game screen
-            if episode >= 950:
-                env.render()
+            #if episode >= 950:
+            #    env.render()
             action = None
 
             # 'random action' or get 'q-value from network'
             if random.random() < epsilon:
-                action = random.randint(0, 1)
+                action = random.randint(0, action_dim - 1)
             else:
-                policy = sess.run([L2], feed_dict={X: obs})
+                policy = sess.run([L3], feed_dict={X: obs})
                 action = np.argmax(np.array(policy))
 
             # save a state before do action
@@ -67,14 +76,14 @@ def main():
 
             # do action and get new state, reward and done
             obs, reward, done, _ = env.step(action)
-            obs = obs.reshape(-1, 4)
+            obs = obs.reshape(-1, state_dim)
 
             reward_list.append(reward)
 
             transition = [bef_obs[0], action, reward, obs[0], done]
             replay_memory.append(transition)
 
-            if len(replay_memory) >= 5:
+            if len(replay_memory) >= batch_size:
                 train_data = random.sample(replay_memory, batch_size)
 
                 bef_state   = [data[0] for data in train_data]
@@ -87,7 +96,7 @@ def main():
                 bef_state = np.stack(bef_state)
 
                 # find aft_state's q-value
-                q_val = sess.run([L2], feed_dict={X: aft_state})
+                q_val = sess.run([L3], feed_dict={X: aft_state})
 
                 # find maximum q-value
                 q_val = np.max(q_val, -1)[0]
@@ -105,21 +114,36 @@ def main():
                 loss_val, _ = sess.run([loss, optimizer], feed_dict={X: bef_state, target: batch_target, act_index: index})
                 loss_list.append(loss_val)
 
-        loss_epi.append(sum(loss_list) / len(loss_list))
-        reward_epi.append(sum(reward_list))
+        if len(replay_memory) >= batch_size:
+            loss_epi.append(sum(loss_list) / len(loss_list))
+            reward_epi.append(sum(reward_list))
 
-        print('***********************')
-        print('episode : ', episode)
-        print('loss : ', loss_epi[-1])
-        print('reward : ', reward_epi[-1])
-        print('epsilon : ', epsilon)
-        print('time : ', time.time() - current_time)
+            print('***********************')
+            print('episode : ', episode)
+            print('loss : ', loss_epi[-1])
+            print('reward : ', reward_epi[-1])
+            print('epsilon : ', epsilon)
+            print('time : ', time.time() - current_time)
+
+            data = reward_epi
+
+            plt.plot(data)
+            plt.title('reward')
+            plt.savefig('reward1.png')
+            plt.close('all')
+
+            data = loss_epi
+
+            plt.plot(data)
+            plt.title('loss')
+            plt.savefig('loss1.png')
+            plt.close('all')
 
         episode += 1
 
         env.close()
         obs = env.reset()
-        obs = obs.reshape(-1, 4)
+        obs = obs.reshape(-1, state_dim)
 
         if epsilon > epsilon_min:
             epsilon -= decay_rate
